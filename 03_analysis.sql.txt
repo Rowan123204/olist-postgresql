@@ -1,0 +1,200 @@
+--- =====================================================
+-- Q1: Total Number of Customers
+-- Objective:
+-- Calculate the total number of unique customers
+-- in the dataset.
+-- =====================================================
+
+SELECT
+    COUNT(DISTINCT customer_unique_id) AS total_customers
+FROM customers;
+
+
+-- =====================================================
+-- CORE BUSINESS KPIs
+-- =====================================================
+
+-- Q2: Total Number of Orders
+-- Objective:
+-- Get total number of unique orders in the system.
+
+SELECT 
+    COUNT(DISTINCT order_id) AS total_orders
+FROM orders;
+
+
+-- Q3: Total Revenue
+-- Objective:
+-- Calculate total revenue from all payments.
+
+SELECT 
+    SUM(payment_value) AS total_revenue
+FROM order_payments;
+
+
+-- Q4: Total Orders + Total Revenue (Combined View)
+-- Objective:
+-- Get overall business snapshot in one query.
+
+SELECT 
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    SUM(op.payment_value) AS total_revenue
+FROM orders o
+JOIN order_payments op
+    ON o.order_id = op.order_id;
+
+
+-- =====================================================
+-- Q5: Monthly Revenue Trend
+-- Objective:
+-- Analyze total revenue generated per month
+-- to identify sales trends over time.
+-- =====================================================
+SELECT
+    DATE_TRUNC('month', o.order_purchase_timestamp) AS month,
+    SUM(op.payment_value) AS revenue
+FROM orders AS o
+JOIN order_payments AS op
+    ON o.order_id = op.order_id
+GROUP BY 1
+ORDER BY 1;
+
+
+-- =====================================================
+-- Q6: Top 10 Customers by Number of Orders
+-- Objective:
+-- Identify customers with the highest number of orders.
+-- =====================================================
+
+SELECT
+    c.customer_unique_id,
+    COUNT(o.order_id) AS total_orders
+FROM customers AS c
+JOIN orders AS o
+    ON c.customer_id = o.customer_id
+GROUP BY c.customer_unique_id
+ORDER BY total_orders DESC
+LIMIT 10;
+
+
+-- =====================================================
+-- Q7: Top 5 Best Selling Products
+-- Objective:
+-- Identify top products based on number of orders
+-- and show category in English.
+-- =====================================================
+
+WITH top_products AS (
+    SELECT
+        p.product_id,
+        p.product_category_name,
+        COUNT(oi.order_id) AS orders_count
+    FROM products AS p
+    JOIN order_items AS oi
+        ON p.product_id = oi.product_id
+    GROUP BY p.product_id, p.product_category_name
+    ORDER BY orders_count DESC
+    LIMIT 5
+)
+
+SELECT
+    tp.product_id,
+    tp.orders_count,
+    pct.product_category_name_english
+FROM top_products tp
+JOIN product_category_name_translation pct
+    ON pct.product_category_name = tp.product_category_name;
+
+
+-- =====================================================
+-- Q8: Average Order Value per Customer
+-- Objective:
+-- Calculate average spending per customer.
+-- =====================================================
+
+SELECT
+    o.customer_id,
+    AVG(op.payment_value) AS avg_order_value
+FROM orders o
+JOIN order_payments op
+    ON o.order_id = op.order_id
+GROUP BY o.customer_id
+ORDER BY avg_order_value DESC;
+-- =====================================================
+-- Q9: Customer Segmentation Based on Order Frequency
+-- Objective:
+-- Segment customers into New, Regular, and Loyal
+-- customers based on the number of orders placed.
+-- =====================================================
+
+WITH customer_orders AS (
+
+    SELECT
+        c.customer_unique_id,
+        COUNT(o.order_id) AS total_orders
+    FROM customers AS c
+    JOIN orders AS o
+        ON c.customer_id = o.customer_id
+    GROUP BY c.customer_unique_id
+
+)
+
+SELECT
+    customer_unique_id,
+    total_orders,
+    CASE
+        WHEN total_orders < 3 THEN 'New Customer'
+        WHEN total_orders BETWEEN 3 AND 6 THEN 'Regular Customer'
+        ELSE 'Loyal Customer'
+    END AS customer_segment
+FROM customer_orders
+ORDER BY total_orders DESC;
+
+-- =====================================================
+-- Q10: Customer Spending Analysis Using Window Function
+-- Objective:
+-- 1. Calculate total spending per order per customer
+-- 2. Calculate total spending per customer
+-- 3. Rank customers based on total spending
+-- =====================================================
+
+WITH order_totals AS (
+
+    SELECT
+        o.customer_id,
+        o.order_id,
+        SUM(op.payment_value) AS total_order_payment
+    FROM orders AS o
+    JOIN order_payments AS op
+        ON o.order_id = op.order_id
+    GROUP BY
+        o.customer_id,
+        o.order_id
+
+),
+
+customer_spending AS (
+
+    SELECT
+        customer_id,
+        order_id,
+        total_order_payment,
+
+        SUM(total_order_payment) OVER (
+            PARTITION BY customer_id
+        ) AS customer_total_spending
+
+    FROM order_totals
+)
+
+SELECT
+    customer_id,
+    order_id,
+    total_order_payment,
+    customer_total_spending,
+
+    RANK() OVER (
+        ORDER BY customer_total_spending DESC
+    ) AS customer_rank
+
+FROM customer_spending;
